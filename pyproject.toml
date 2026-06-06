@@ -1,0 +1,12 @@
+[project]
+name = "cognition"
+version = "0.1.0"
+description = "Simulated lower-order cognitive architecture"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

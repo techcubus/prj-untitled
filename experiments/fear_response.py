@@ -3,6 +3,10 @@ Experiment: static hazard (fire) triggers fear → flee → fear subsides.
 
 Demonstrates the fear spike-and-decay cycle and the nociceptive pain
 that builds from sustained contact if the agent doesn't flee fast enough.
+
+Tick resolution: 1 slow tick = slow_divisor fast ticks (default 10).
+Fear and curiosity are fast drives — they react within a single fast tick.
+Discomfort is a slow drive — pain accumulates and heals on the slow timescale.
 """
 
 from cognition import Agent
@@ -11,11 +15,12 @@ from cognition.sensors.internal import InternalSensor
 from cognition.sensors.nociception import NociceptionSensor
 
 
-def run(ticks: int = 70, hazard_appears_at: int = 8, hazard_lasts: int = 6):
+def run(slow_ticks: int = 70, hazard_appears_at: int = 8, hazard_lasts: int = 6):
     agent = Agent("mouse")
+    div = agent.limbic.slow_divisor
 
-    # This experiment isolates fear/pain — neutralise hunger so starvation
-    # doesn't kill the agent before the full recovery arc plays out.
+    # Isolate fear/pain — neutralise hunger so starvation doesn't kill the agent
+    # before the full recovery arc plays out.
     agent.limbic.drives["hunger"].value = 0.0
     agent.limbic.drives["hunger"].decay_rate = 0.0
 
@@ -24,18 +29,23 @@ def run(ticks: int = 70, hazard_appears_at: int = 8, hazard_lasts: int = 6):
     noci     = NociceptionSensor(agent.bus, agent.perception)
     agent.attach_sensor(visual).attach_sensor(internal).attach_sensor(noci)
 
+    print(f"\nTimescale: 1 slow tick = {div} fast ticks")
     print(f"\n{'Tick':>4}  {'Fear':>6}  {'Discomf':>7}  {'Fatigue':>7}  {'Mood':>6}  {'Scene':<22}  Action")
     print("─" * 76)
 
-    for t in range(1, ticks + 1):
+    for t in range(1, slow_ticks + 1):
         if t == hazard_appears_at:
             visual.set_scene(["fire"])
         elif t == hazard_appears_at + hazard_lasts:
             visual.set_scene([])
 
-        action = agent.tick()
-        s = agent.status()
+        action = None
+        for _ in range(div):
+            a = agent.tick()
+            if a is not None:
+                action = a
 
+        s = agent.status()
         fear    = s["drives"]["fear"]
         discomf = s["drives"]["discomfort"]
         fatigue = s["drives"]["fatigue"]

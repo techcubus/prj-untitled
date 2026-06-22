@@ -18,12 +18,12 @@ def main():
         help="Which experiment to run (default: hunger)",
     )
     parser.add_argument("--ticks", type=int, default=None,
-                        help="Number of simulation ticks (defaults to each experiment's own value)")
+                        help="Number of slow ticks to run (defaults to each experiment's own value)")
     args = parser.parse_args()
 
     module_path, fn_name = EXPERIMENTS[args.experiment]
     module = importlib.import_module(module_path)
-    kwargs = {"ticks": args.ticks} if args.ticks is not None else {}
+    kwargs = {"slow_ticks": args.ticks} if args.ticks is not None else {}
     getattr(module, fn_name)(**kwargs)
 
 

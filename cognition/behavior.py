@@ -138,8 +138,8 @@ class BehaviorEngine:
             self.limbic.satisfy(drive_name, amount)
             outcome_valence = max(0.1, concept_valence)
 
-        # every action costs fatigue
-        cost = ACTION_FATIGUE_COST.get(action.name, 0.02)
+        # every action costs fatigue — scaled to slow timescale so costs stay consistent
+        cost = ACTION_FATIGUE_COST.get(action.name, 0.02) / self.limbic.slow_divisor
         if cost > 0 and "fatigue" in self.limbic.drives:
             self.limbic.drives["fatigue"].value = min(
                 1.0, self.limbic.drives["fatigue"].value + cost

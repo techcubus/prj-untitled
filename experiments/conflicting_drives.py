@@ -4,6 +4,8 @@ Experiment: hunger vs. fear/discomfort — food and a static hazard (fire) appea
 All four new senses are active: nociception builds pain from contact, taste fires after eating,
 emotional modulation sharpens relevant perceptions, fatigue accumulates from actions.
 If the agent dies, it respawns with mutated parameters.
+
+Tick resolution: 1 slow tick = slow_divisor fast ticks (default 10).
 """
 
 from cognition import Agent
@@ -19,7 +21,6 @@ def _make_agent(base: Agent | None = None) -> tuple[Agent, VisualSensor]:
     internal = InternalSensor(agent.bus, agent.limbic)
     noci     = NociceptionSensor(agent.bus, agent.perception)
     taste    = TasteSensor(agent.bus)
-    # external sensors first so nociception has fresh hazard context when it fires
     agent.attach_sensor(visual).attach_sensor(internal).attach_sensor(noci).attach_sensor(taste)
     return agent, visual
 
@@ -30,18 +31,20 @@ def _header():
 
 
 def run(
-    ticks: int = 60,
+    slow_ticks: int = 60,
     conflict_starts_at: int = 18,
     conflict_lasts: int = 15,
     max_generations: int = 3,
 ):
     agent, visual = _make_agent()
+    div = agent.limbic.slow_divisor
+    print(f"\nTimescale: 1 slow tick = {div} fast ticks")
     print(f"\nGen {agent.generation} | hunger={agent.limbic.drives['hunger'].value:.2f}  "
           f"hunger_decay={agent.limbic.drives['hunger'].decay_rate:.4f}\n")
     _header()
 
     t = 0
-    while t < ticks:
+    while t < slow_ticks:
         t += 1
 
         if t == conflict_starts_at:
@@ -49,9 +52,13 @@ def run(
         elif t == conflict_starts_at + conflict_lasts:
             visual.set_scene(["apple"])
 
-        action = agent.tick()
-        s = agent.status()
+        action = None
+        for _ in range(div):
+            a = agent.tick()
+            if a is not None:
+                action = a
 
+        s = agent.status()
         hunger  = s["drives"]["hunger"]
         discomf = s["drives"]["discomfort"]
         fear    = s["drives"]["fear"]
@@ -72,6 +79,7 @@ def run(
                 break
             agent, visual = _make_agent(agent)
             t = 0
+            div = agent.limbic.slow_divisor
             print(f"\nGen {agent.generation} | "
                   f"hunger_decay={agent.limbic.drives['hunger'].decay_rate:.4f}  "
                   f"discomfort_threshold={agent.limbic.drives['discomfort'].threshold:.3f}\n")

@@ -7,6 +7,7 @@ class Drive:
     value: float = 0.0
     decay_rate: float = 0.02    # positive = need builds; negative = naturally heals
     threshold: float = 0.6      # urgency level that triggers a need signal
+    timescale: str = "fast"     # "fast": ticks every agent tick; "slow": every slow_divisor fast ticks
 
     def tick(self) -> None:
         self.value = max(0.0, min(1.0, self.value + self.decay_rate))
@@ -24,14 +25,16 @@ _PERCEPTION_SPIKE: dict[str, float] = {
 
 
 class LimbicSystem:
-    def __init__(self, bus):
+    def __init__(self, bus, slow_divisor: int = 10):
         self.bus = bus
+        self.slow_divisor = slow_divisor
+        self._fast_ticks = 0
         self.drives: dict[str, Drive] = {
-            "hunger":     Drive("hunger",     value=0.10, decay_rate= 0.025),
-            "fear":       Drive("fear",       value=0.00, decay_rate=-0.050, threshold=0.40),
-            "discomfort": Drive("discomfort", value=0.00, decay_rate=-0.015),
-            "fatigue":    Drive("fatigue",    value=0.05, decay_rate= 0.004, threshold=0.70),
-            "curiosity":  Drive("curiosity",  value=0.35, decay_rate= 0.008, threshold=0.50),
+            "hunger":     Drive("hunger",     value=0.10, decay_rate= 0.025, timescale="slow"),
+            "fear":       Drive("fear",       value=0.00, decay_rate=-0.050, threshold=0.40, timescale="fast"),
+            "discomfort": Drive("discomfort", value=0.00, decay_rate=-0.015, timescale="slow"),
+            "fatigue":    Drive("fatigue",    value=0.05, decay_rate= 0.004, threshold=0.70, timescale="slow"),
+            "curiosity":  Drive("curiosity",  value=0.35, decay_rate= 0.008, threshold=0.50, timescale="slow"),
         }
         self.alive: bool = True
         self.age: int = 0
@@ -48,10 +51,15 @@ class LimbicSystem:
                     self.drives[trigger].value = min(1.0, self.drives[trigger].value + spike)
 
     def _on_nociception(self, payload: dict) -> None:
-        """Direct tissue-damage signal — bypasses concept graph, drives discomfort."""
+        """Direct tissue-damage signal — bypasses concept graph, drives discomfort.
+
+        Scaled by slow_divisor so total discomfort impact per slow tick stays constant
+        regardless of how many fast ticks fire nociception within it.
+        """
         pain = payload["pain_level"]
-        # Spike scales with current pain intensity; escalates under sustained contact
-        self.drives["discomfort"].value = min(1.0, self.drives["discomfort"].value + pain * 0.22)
+        self.drives["discomfort"].value = min(
+            1.0, self.drives["discomfort"].value + pain * 0.22 / self.slow_divisor
+        )
 
     def _on_taste(self, payload: dict) -> None:
         """Post-ingestive signal — bad food spikes discomfort; good food needs no action."""
@@ -62,9 +70,14 @@ class LimbicSystem:
             )
 
     def tick(self) -> None:
+        self._fast_ticks += 1
         self.age += 1
+        slow_tick = (self._fast_ticks % self.slow_divisor) == 0
+
         for drive in self.drives.values():
-            drive.tick()
+            if drive.timescale == "fast" or slow_tick:
+                drive.tick()
+
         if self.drives["hunger"].value >= 1.0 or self.drives["discomfort"].value >= 1.0:
             self.alive = False
             self.bus.publish("death", {"age": self.age, "cause": self._cause_of_death()})

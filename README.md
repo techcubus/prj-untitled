@@ -24,13 +24,15 @@ All modules communicate through a central publish/subscribe bus — no module ho
 ### 2. Drives (the limbic system)
 Five drives are modeled, each with a current value, a natural build or decay rate, and an urgency threshold:
 
-| Drive | Behavior |
-|---|---|
-| Hunger | Builds steadily; death at 1.0 (starvation) |
-| Fear | Spikes on hazard perception; decays quickly when threat is gone |
-| Discomfort | Fed by nociception (tissue damage) and bad taste; heals slowly |
-| Fatigue | Builds with each action taken; drives rest behavior |
-| Curiosity | Builds over time; satisfied by exploring novel stimuli |
+| Drive | Timescale | Behavior |
+|---|---|---|
+| Hunger | Slow | Builds steadily; death at 1.0 (starvation) |
+| Fear | **Fast** | Spikes on hazard perception; decays quickly when threat is gone |
+| Discomfort | Slow | Fed by nociception (tissue damage) and bad taste; heals slowly |
+| Fatigue | Slow | Builds with each action taken; drives rest behavior |
+| Curiosity | Slow | Builds over time; satisfied by exploring novel stimuli |
+
+Drives run on two timescales. The simulation ticks at a fast rate (roughly seconds); every `slow_divisor` fast ticks (default: 10), slow drives also advance. This separates reflexive responses from metabolic ones — fear reacts within a single fast tick the way the amygdala does, while hunger and healing operate on a much longer cycle. A displayed "tick" in experiments represents one slow tick (one metabolic cycle), with 10 fast ticks of neural processing happening inside it.
 
 ### 3. Sensors
 Sensors are split into two categories, which is a distinction that matters architecturally:
@@ -46,14 +48,15 @@ The limbic state scales sensation intensity before concept matching. A hungry ag
 The agent stores episodes (what happened, what the scene looked like, what the emotional state was). Retrieval is weighted by both semantic similarity (tag overlap with current context) and emotional similarity (cosine distance between current limbic state and the state at encoding time). A hungry agent surfaces food memories faster than a calm one.
 
 ### 6. Behavioral loop
-Each tick:
+Each fast tick:
 1. Sensors fire
 2. Perception processes sensations into concepts (with emotional modulation)
-3. Drives tick forward (needs build)
-4. The highest-urgency active drive becomes the primary need
-5. The behavior engine scans the current scene and memory for something that satisfies it
-6. An action is executed; the outcome is stored in memory
-7. If drives breach death thresholds (hunger or discomfort ≥ 1.0), the agent dies and can respawn with mutated drive parameters (an evolutionary loop)
+3. Fast drives (fear) tick forward
+4. Every `slow_divisor` fast ticks, slow drives (hunger, discomfort, fatigue, curiosity) also tick
+5. The highest-urgency active drive becomes the primary need
+6. The behavior engine scans the current scene and memory for something that satisfies it
+7. An action is executed; the outcome is stored in memory
+8. If drives breach death thresholds (hunger or discomfort ≥ 1.0), the agent dies and can respawn with mutated drive parameters (an evolutionary loop)
 
 ---
 

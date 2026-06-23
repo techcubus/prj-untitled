@@ -41,6 +41,8 @@ Sensors are split into two categories, which is a distinction that matters archi
 
 **Interoceptive** (body-facing) — nociception, taste. These bypass the concept graph entirely and publish directly to the limbic system. Pain is not something perceived in the world; it is felt. This separation turned out to be important: early versions incorrectly ran pain through the concept graph, which created architectural confusion between what the agent *sees* and what it *feels*.
 
+There are two visual sensor implementations: `VisualSensor` (non-spatial, manually sets what's "in scene") and `WorldVisualSensor` (spatial, reads from a `World` grid). The non-spatial sensor is used for controlled experiments that declaratively place stimuli; the spatial sensor is used when the agent needs to actually navigate.
+
 ### 4. Emotional modulation of perception
 The limbic state scales sensation intensity before concept matching. A hungry agent perceives food more intensely. A tired agent finds novelty less salient. This means the same physical environment produces a different perceptual experience depending on internal state.
 
@@ -58,11 +60,19 @@ Each fast tick:
 7. An action is executed; the outcome is stored in memory
 8. If drives breach death thresholds (hunger or discomfort ≥ 1.0), the agent dies and can respawn with mutated drive parameters (an evolutionary loop)
 
+### 7. Spatial world and navigation
+The agent can be placed in a 2D grid (`World`). When a `WorldVisualSensor` is attached, sensations carry distance and position alongside the usual tags. The behavior engine uses this to select between two navigation actions:
+
+- **approach** — move one tile toward a drive satisfier (food, novel object). Fires when the target is outside interaction range (> 1.5 tiles). No drive satisfaction until the agent arrives and consumes.
+- **retreat** — move one tile away from a hazard. Satisfies fear at the same rate as fleeing, so the fast-drive fear cycle stays stable.
+
+Navigation moves once per slow tick (metabolic cadence) even though drive decisions happen every fast tick. Non-spatial experiments are unaffected — sensors without position data produce distance = 0, which is treated as "adjacent" throughout the pipeline.
+
 ---
 
 ## Current results
 
-Three experiments have been built and run:
+Four experiments have been built and run:
 
 ### Experiment 1: basic hunger (`python main.py hunger`)
 Apple appears in the environment partway through. The agent ignores it until hunger crosses threshold, then consumes it and resets. Straightforward drive-reduction loop working as expected.
@@ -83,6 +93,15 @@ Apple and fire appear simultaneously. All five drives are active. This produced 
 
 **Unresolvable pain.** After the conflict period, discomfort remained above 0.70 through the end of the experiment (tick 60) with no available action to address it. The agent could detect the problem but not fix it — there was no hazard to avoid and no treatment mechanic. This is an honest limitation of the current model: the agent can't self-treat injury.
 
+### Experiment 4: spatial navigation (`python main.py spatial`)
+Agent placed in a 20×20 grid with an apple 5 tiles east. A fire hazard appears mid-run directly between the agent and the food.
+
+**Phase 1 (ticks 1–39):** The agent waits until hunger crosses threshold, then walks east one tile per slow tick — `approach(apple)` firing each tick — until within reach, then `consume(apple)`. Clean navigation loop, no conflict.
+
+**Phase 2 (ticks 40+):** Fire appears one tile west of the agent's current position. Nociception fires immediately (adjacent contact), discomfort builds, the agent retreats east. After 6 retreat steps the fire exits visual range and fear resolves. Hunger rebuilds. The agent approaches again from the east, now needing to pass through the fire zone to reach the apple. Fear spikes on seeing fire, retreat fires, and the agent gets stuck oscillating near the hazard — hunger never quite building high enough to fully override fear before fear spikes again.
+
+This exposed an honest limitation: the agent has no path-planning. It can approach a target and retreat from a hazard, but it cannot route *around* an obstacle. In a real roguelike environment this would need to be solved — either with simple obstacle-avoidance geometry or a proper pathfinding layer.
+
 ---
 
 ## Running it
@@ -91,6 +110,7 @@ Apple and fire appear simultaneously. All five drives are active. This produced 
 python main.py hunger           # basic hunger → satiation loop
 python main.py fear             # fear spike → flee → pain → recovery
 python main.py conflict         # hunger + fire simultaneously, all drives active
+python main.py spatial          # 2D grid navigation with mid-run hazard
 
 python main.py hunger --ticks 120   # override tick count
 python experiments/fear_response.py # run experiment directly

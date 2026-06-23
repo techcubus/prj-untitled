@@ -22,6 +22,10 @@ class Agent:
         self._sensors.append(sensor)
         return self
 
+    def attach_world(self, world) -> "Agent":
+        self.behavior.world = world
+        return self
+
     def tick(self) -> Action | None:
         if not self.limbic.alive:
             return None
@@ -48,7 +52,7 @@ class Agent:
         return self.limbic.alive
 
     def status(self) -> dict:
-        return {
+        s = {
             "drives":     self.limbic.snapshot(),
             "mood":       self.limbic.mood(),
             "memories":   len(self.memory),
@@ -57,3 +61,6 @@ class Agent:
             "age":        self.limbic.age,
             "generation": self.generation,
         }
+        if self.behavior.world:
+            s["pos"] = self.behavior.world.agent_pos
+        return s

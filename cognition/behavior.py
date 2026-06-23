@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from .bus import EventBus
 from .limbic import LimbicSystem
 from .memory import MemoryStore, Episode
@@ -22,18 +22,27 @@ ACTION_EFFECTS: dict[str, tuple[str, float]] = {
     "avoid":    ("discomfort", 0.20),
     "explore":  ("curiosity",  0.60),
     "rest":     ("fatigue",    0.60),
+    "retreat":  ("fear",       0.70),  # matches flee — running away fully resolves the threat response
 }
 
 # Energy cost per action — increases fatigue drive
 ACTION_FATIGUE_COST: dict[str, float] = {
-    "consume": 0.02,
-    "drink":   0.02,
-    "flee":    0.08,
-    "freeze":  0.01,
-    "avoid":   0.04,
-    "explore": 0.05,
-    "rest":    0.00,
+    "consume":  0.02,
+    "drink":    0.02,
+    "flee":     0.08,
+    "freeze":   0.01,
+    "avoid":    0.04,
+    "explore":  0.05,
+    "rest":     0.00,
+    "approach": 0.03,
+    "retreat":  0.04,
 }
+
+# Navigation actions don't produce episodic memories — they're locomotion, not outcomes
+_NAV_ACTIONS = frozenset({"approach", "retreat"})
+
+# Distance threshold: closer than this → act on the object; farther → navigate first
+_INTERACTION_RADIUS = 1.5
 
 
 @dataclass
@@ -41,16 +50,20 @@ class Action:
     name: str
     target: str | None = None
     drive: str | None = None
+    position: tuple[int, int] | None = None  # set for spatial navigation actions
 
     def __str__(self) -> str:
-        return f"{self.name}({self.target})" if self.target else self.name
+        if self.target:
+            return f"{self.name}({self.target})"
+        return self.name
 
 
 class BehaviorEngine:
-    def __init__(self, bus: EventBus, limbic: LimbicSystem, memory: MemoryStore):
+    def __init__(self, bus: EventBus, limbic: LimbicSystem, memory: MemoryStore, world=None):
         self.bus = bus
         self.limbic = limbic
         self.memory = memory
+        self.world = world          # optional; enables spatial navigation when set
         self.current_concepts: list[dict] = []
         bus.subscribe("perception", self._on_perception)
 
@@ -83,13 +96,23 @@ class BehaviorEngine:
 
         if need == "discomfort":
             if hazards:
-                return Action(name="avoid", target=hazards[0]["tag"], drive="discomfort")
+                h = hazards[0]
+                pos = h.get("position")
+                if self.world and pos:
+                    return Action(name="retreat", target=h["tag"], drive="discomfort", position=pos)
+                return Action(name="avoid", target=h["tag"], drive="discomfort")
             return Action(name="rest", drive="discomfort")
 
         if need == "fear":
             fearful = [c for c in self.current_concepts if "hazard" in c.get("is_a", [])]
-            return Action(name="flee" if fearful else "freeze", drive="fear",
-                          target=fearful[0]["tag"] if fearful else None)
+            if not fearful:
+                return Action(name="freeze", drive="fear")
+            f = fearful[0]
+            pos = f.get("position")
+            dist = f.get("distance", 0)
+            if self.world and pos and dist > _INTERACTION_RADIUS:
+                return Action(name="retreat", target=f["tag"], drive="fear", position=pos)
+            return Action(name="flee" if fearful else "freeze", drive="fear", target=f["tag"])
 
         # direct perception match — skip known hazards and memory-flagged bad items
         for concept in self.current_concepts:
@@ -105,6 +128,10 @@ class BehaviorEngine:
                 )
                 if past and past[0].outcome_valence < 0:
                     continue    # learned aversion
+                pos = concept.get("position")
+                dist = concept.get("distance", 0)
+                if self.world and pos and dist > _INTERACTION_RADIUS:
+                    return Action(name="approach", target=concept["tag"], drive=need, position=pos)
                 verb = "drink" if "drink" in concept.get("is_a", []) else "consume"
                 return Action(name=verb, target=concept["tag"], drive=need)
 
@@ -122,6 +149,27 @@ class BehaviorEngine:
         return None
 
     def _execute(self, action: Action) -> None:
+        # Navigation: move agent, cost fatigue, no memory — it's locomotion not an outcome.
+        # Only step once per slow tick (when fast ticks align with the slow boundary)
+        # so the agent moves at the metabolic cadence, not the neural one.
+        if action.name in _NAV_ACTIONS:
+            slow_boundary = (self.limbic._fast_ticks % self.limbic.slow_divisor) == 0
+            if self.world and action.position and slow_boundary:
+                if action.name == "approach":
+                    self.world.step_toward(action.position)
+                else:
+                    self.world.step_away(action.position)
+            cost = ACTION_FATIGUE_COST.get(action.name, 0.02) / self.limbic.slow_divisor
+            if cost > 0 and "fatigue" in self.limbic.drives:
+                self.limbic.drives["fatigue"].value = min(
+                    1.0, self.limbic.drives["fatigue"].value + cost
+                )
+            # partial fear satisfaction for retreating
+            if action.name == "retreat" and "fear" in self.limbic.drives:
+                drive_name, amount = ACTION_EFFECTS["retreat"]
+                self.limbic.satisfy(drive_name, amount)
+            return
+
         if action.name not in ACTION_EFFECTS:
             return
 

@@ -50,6 +50,11 @@ class PerceptionModule:
         concepts = self._associate(modulated.tags)
         if not concepts:
             return
+        # attach spatial info when the sensor provides it (WorldVisualSensor)
+        if isinstance(sensation.raw, dict) and "position" in sensation.raw:
+            for c in concepts:
+                c["position"] = sensation.raw["position"]
+                c["distance"] = sensation.raw["distance"]
         # accumulate into scene; multiple sensors contribute within the same tick
         seen = {c["tag"] for c in self.current_scene}
         for c in concepts:

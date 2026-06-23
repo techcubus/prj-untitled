@@ -19,7 +19,12 @@ class NociceptionSensor:
         self.heal_rate = heal_rate
 
     def tick(self) -> None:
-        hazards = [c for c in self.perception.current_scene if c.get("hazard")]
+        # only build pain from hazards the agent is actually standing in/on
+        # concepts with no distance key (non-spatial experiments) default to 0 = adjacent
+        hazards = [
+            c for c in self.perception.current_scene
+            if c.get("hazard") and c.get("distance", 0) <= 1.5
+        ]
 
         if hazards:
             worst = max(abs(h.get("valence", -0.5)) for h in hazards)

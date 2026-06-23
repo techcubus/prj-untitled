@@ -2,9 +2,10 @@ import argparse
 import importlib
 
 EXPERIMENTS = {
-    "hunger":   ("experiments.basic_hunger",      "run"),
-    "fear":     ("experiments.fear_response",     "run"),
-    "conflict": ("experiments.conflicting_drives", "run"),
+    "hunger":   ("experiments.basic_hunger",        "run"),
+    "fear":     ("experiments.fear_response",       "run"),
+    "conflict": ("experiments.conflicting_drives",  "run"),
+    "spatial":  ("experiments.spatial_navigation",  "run"),
 }
 
 

@@ -6,6 +6,7 @@ EXPERIMENTS = {
     "fear":     ("experiments.fear_response",       "run"),
     "conflict": ("experiments.conflicting_drives",  "run"),
     "spatial":  ("experiments.spatial_navigation",  "run"),
+    "longrun":  ("experiments.long_run",            "run"),
 }
 
 

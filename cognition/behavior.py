@@ -1,3 +1,4 @@
+import random
 from dataclasses import dataclass, field
 from .bus import EventBus
 from .limbic import LimbicSystem
@@ -36,10 +37,13 @@ ACTION_FATIGUE_COST: dict[str, float] = {
     "rest":     0.00,
     "approach": 0.03,
     "retreat":  0.04,
+    "wander":   0.02,
 }
 
 # Navigation actions don't produce episodic memories — they're locomotion, not outcomes
-_NAV_ACTIONS = frozenset({"approach", "retreat"})
+_NAV_ACTIONS = frozenset({"approach", "retreat", "wander"})
+
+_WANDER_DIRS = [(dx, dy) for dx in (-1, 0, 1) for dy in (-1, 0, 1) if dx or dy]
 
 # Distance threshold: closer than this → act on the object; farther → navigate first
 _INTERACTION_RADIUS = 1.5
@@ -146,6 +150,10 @@ class BehaviorEngine:
                 if drive == need:
                     return Action(name=ep.action, drive=need)
 
+        # nothing in scene or memory — forage (random walk) if in a spatial world
+        if self.world:
+            return Action(name="wander", drive=need)
+
         return None
 
     def _execute(self, action: Action) -> None:
@@ -154,11 +162,18 @@ class BehaviorEngine:
         # so the agent moves at the metabolic cadence, not the neural one.
         if action.name in _NAV_ACTIONS:
             slow_boundary = (self.limbic._fast_ticks % self.limbic.slow_divisor) == 0
-            if self.world and action.position and slow_boundary:
-                if action.name == "approach":
+            if self.world and slow_boundary:
+                if action.name == "approach" and action.position:
                     self.world.step_toward(action.position)
-                else:
+                elif action.name == "retreat" and action.position:
                     self.world.step_away(action.position)
+                elif action.name == "wander":
+                    dx, dy = random.choice(_WANDER_DIRS)
+                    ax, ay = self.world.agent_pos
+                    self.world.agent_pos = (
+                        max(0, min(self.world.width - 1,  ax + dx)),
+                        max(0, min(self.world.height - 1, ay + dy)),
+                    )
             cost = ACTION_FATIGUE_COST.get(action.name, 0.02) / self.limbic.slow_divisor
             if cost > 0 and "fatigue" in self.limbic.drives:
                 self.limbic.drives["fatigue"].value = min(

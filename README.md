@@ -61,10 +61,11 @@ Each fast tick:
 8. If drives breach death thresholds (hunger or discomfort ≥ 1.0), the agent dies and can respawn with mutated drive parameters (an evolutionary loop)
 
 ### 7. Spatial world and navigation
-The agent can be placed in a 2D grid (`World`). When a `WorldVisualSensor` is attached, sensations carry distance and position alongside the usual tags. The behavior engine uses this to select between two navigation actions:
+The agent can be placed in a 2D grid (`World`). When a `WorldVisualSensor` is attached, sensations carry distance and position alongside the usual tags. The behavior engine uses this to select between three navigation actions:
 
 - **approach** — move one tile toward a drive satisfier (food, novel object). Fires when the target is outside interaction range (> 1.5 tiles). No drive satisfaction until the agent arrives and consumes.
 - **retreat** — move one tile away from a hazard. Satisfies fear at the same rate as fleeing, so the fast-drive fear cycle stays stable.
+- **wander** — move one tile in a random direction. Fires when a drive is active but nothing satisfying is visible and memory has no relevant episodes. The foraging fallback when the agent is effectively blind.
 
 Navigation moves once per slow tick (metabolic cadence) even though drive decisions happen every fast tick. Non-spatial experiments are unaffected — sensors without position data produce distance = 0, which is treated as "adjacent" throughout the pipeline.
 
@@ -72,7 +73,7 @@ Navigation moves once per slow tick (metabolic cadence) even though drive decisi
 
 ## Current results
 
-Four experiments have been built and run:
+Five experiments have been built and run:
 
 ### Experiment 1: basic hunger (`python main.py hunger`)
 Apple appears in the environment partway through. The agent ignores it until hunger crosses threshold, then consumes it and resets. Straightforward drive-reduction loop working as expected.
@@ -102,6 +103,19 @@ Agent placed in a 20×20 grid with an apple 5 tiles east. A fire hazard appears 
 
 This exposed an honest limitation: the agent has no path-planning. It can approach a target and retreat from a hazard, but it cannot route *around* an obstacle. In a real roguelike environment this would need to be solved — either with simple obstacle-avoidance geometry or a proper pathfinding layer.
 
+### Experiment 5: long-run evolutionary simulation (`python main.py longrun`)
+30×30 grid, two static fire hazards, food respawns at a random location after each eat. Unlimited generations with Gaussian mutation of drive parameters on each respawn. Runs for 3200 slow ticks with a compact summary every 50 ticks and a full generation history table at the end.
+
+**What the 3200-tick run revealed:**
+
+55 generations lived and died, all of starvation (discomfort never killed anyone). 26 total eats across the entire run — roughly one per generation on average.
+
+Early generations (0–3) found a local optimum: hunger decay drifted down slightly (slower starvation = more time to forage), and these agents lived ~105–110 ticks each and got 2 eats per life. Then mutation spiked hunger decay upward in generation 4, cutting the survival window to 31 ticks — not enough time to wander into visual range of food. Three generations died with zero eats.
+
+Over the following 40+ generations, hunger decay drifted steadily downward through random mutation: 0.025 → 0.013 by generation 47. Counterintuitively, this made things worse. With a hunger decay of 0.013, the agent doesn't hit the hunger threshold (0.60) until tick 46 of a ~55-tick budget. That leaves only 9 ticks to wander into food. Agents lived longer but ate less.
+
+**The core bottleneck identified:** Every death was starvation. The agent has no directional memory of where food was found. After each respawn, food is in a new random location and the wander action is genuinely random — an undirected Brownian walk hoping to stumble into visual range (8 tiles) of food before starving. This is the next unsolved problem.
+
 ---
 
 ## Running it
@@ -111,6 +125,7 @@ python main.py hunger           # basic hunger → satiation loop
 python main.py fear             # fear spike → flee → pain → recovery
 python main.py conflict         # hunger + fire simultaneously, all drives active
 python main.py spatial          # 2D grid navigation with mid-run hazard
+python main.py longrun          # 3200-tick evolutionary simulation
 
 python main.py hunger --ticks 120   # override tick count
 python experiments/fear_response.py # run experiment directly
